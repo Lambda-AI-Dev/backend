@@ -1,7 +1,12 @@
 var AWS = require('aws-sdk');
+require("dotenv").config();
 
-// AWS config details (TODO: Should be hidden in a credentials file)
-// TODO: Replace with AWS config details
+// AWS config details
+AWS.config.update({
+    region: process.env.REGION,
+    accessKeyId: process.env.ACCESS_ID,
+    secretAccessKey: process.env.SECRET_KEY
+});
 
 // Create DocumentClient object to allow methods to interact with DynamoDB database
 var docClient = new AWS.DynamoDB.DocumentClient();
@@ -32,14 +37,7 @@ function queryItemsFromDatabase(table, partitionKeyName, partitionKey, callback)
   
     // Get the data entries based on the parameters defined above
     docClient.query(params, function(err, data) {
-        if (err) {
-          console.error("Unable to query. Error: ", " ", table, " ", JSON.stringify(err, null, 2));
-          callback(err);
-        } else {
-          console.log("Query succeeded. ", table);
-          console.log(data);
-          callback(data);
-        }
+        callback(err, data);
     });
 }
 
