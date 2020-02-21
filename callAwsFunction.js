@@ -1,7 +1,7 @@
 var AWS = require('aws-sdk');
 
 // AWS config details (TODO: Should be hidden in a credentials file)
-// TODO: Replace with AWS config details
+// TODO: Replace with AWS config detail
 
 /**
  * Invoke a AWS Lambda function with particular name and inputs
