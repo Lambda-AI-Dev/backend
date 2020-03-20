@@ -1,15 +1,15 @@
-var AWS = require('aws-sdk');
-require("dotenv").config();
+let AWS = require('aws-sdk');
+require('dotenv').config();
 
 // AWS config details
 AWS.config.update({
-    region: process.env.REGION,
-    accessKeyId: process.env.ACCESS_ID,
-    secretAccessKey: process.env.SECRET_KEY
+  region: process.env.REGION,
+  accessKeyId: process.env.ACCESS_ID,
+  secretAccessKey: process.env.SECRET_KEY
 });
 
 // Create DocumentClient object to allow methods to interact with DynamoDB database
-var docClient = new AWS.DynamoDB.DocumentClient();
+let docClient = new AWS.DynamoDB.DocumentClient();
 
 /**
  * Query items from the DynamoDB database; used when the particular database has a 
@@ -18,45 +18,50 @@ var docClient = new AWS.DynamoDB.DocumentClient();
  * @param table The name of the table from which you are fetching data
  * @param partitionKeyName The name of the partition key (not the actual key value)
  * @param partitionKey The value of the primary/partition key you are searching for
- * @param callback The callback function returning the response from the database
  */
-function queryItemsFromDatabase(table, partitionKeyName, partitionKey, callback) {
-    // Create the DynamoDB database 'query' input parameters
-    let params = {
-      TableName : table,
-      KeyConditionExpression: "#key = :value",
-      ExpressionAttributeNames:{
-          "#key": partitionKeyName
-      },
-      ExpressionAttributeValues: {
-          ":value": partitionKey
-      }
-    };
-    
-    console.log("queryItemsFromDatabase Entered! Table: " + table + " " + partitionKeyName + " " + partitionKey);
+function queryItemsFromDatabase(table, partitionKeyName, partitionKey) {
+  // Create the DynamoDB database 'query' input parameters
+  let params = {
+    TableName: table,
+    KeyConditionExpression: '#key = :value',
+    ExpressionAttributeNames:{
+      '#key': partitionKeyName
+    },
+    ExpressionAttributeValues: {
+      ':value': partitionKey
+    }
+  }
   
-    // Get the data entries based on the parameters defined above
-    docClient.query(params, function(err, data) {
-        callback(err, data);
+  console.log('queryItemsFromDatabase Entered! Table: ' + table + ' ' + partitionKeyName + ' ' + partitionKey);
+  
+  // Get the data entries based on the parameters defined above
+  return new Promise((resolve, reject) => {
+    docClient.query(params, (err, data) => {
+      if (!err) {
+        resolve(data);
+      } else {
+        reject(err);
+      }
     });
+  });
 }
 
-/**
- * Get the images that a particular labeler has already seen
- * 
- * @param labelerId The cookie fetched from the labeler
- */
-function getLabeledImages(labelerId) {
-    queryItemsFromDatabase("labeler_profile", "labelerId", labelerId, (err, data) => {
-        if (err) {
-            console.error('There was an error in fetching the data. See below.');
-            console.error(err);
-        } else {
-            console.log('The data was successfully returned; see below.');
-            console.log(data);
-        }
-    });
-}
+function scanFilteredItemsFromDatabase(table, limit, filterExpression) {
+  // Create the DynamoDB database 'scan' input parameters
+  let params = {
+    TableName: table,
+    Limit: limit,
+    FilterExpression: filterExpression
+  }
 
-// Get the imageId list associated with a labelerId from DynamoDB.
-getLabeledImages("hlqok9u9Bf1OtBG6");
+  // Get the data entries based on the parameters defined above
+  return new Promise((resolve, reject) => {
+    docClient.scan(params, (err, data) => {
+      if (!err) {
+        resolve(data);
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
