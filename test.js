@@ -99,6 +99,8 @@ let promise = new Promise((resolve, reject) => {
             item.class = classes;
   
             // Set other variables specific to the task
+            item.job = (Math.random() + '').substring(2,10) 
+             + (Math.random() + '').substring(2,10);
             item.labelingMethod = 'multipleChoice';
             item.stoppedByTimer = null;
             item.beginTimestamp = null;
