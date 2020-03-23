@@ -22,7 +22,7 @@ const maxOccurrences = 5; // Number of times a class should be given in a task
 /**
  * Get the list of taskIds
  * 
- * @param labeler_id
+ * @param labelerId
  * @param type 
  */
 function getLabelerTaskList(labelerId, type) {
@@ -59,36 +59,43 @@ function getLabelerTaskList(labelerId, type) {
  * This function is recursive, re-calling the 'scan' function until it reaches
  * 'taskCount' number of valid tasks
  * 
- * @param taskParams params for the scan call to the 'task' table
+ * @param taskParams params for the scan call to the 'unfinished_task' table
+ * @param labelerId the 'labelerId' for which these tasks are requested
  * @param taskCount the number of tasks requested for 'labelerId'
  * @param tasks the list of task objects to be returned 
  */
-function getTasks(taskParams, taskCount, tasks) {
+function getTasks(taskParams, labelerId, taskCount, tasks) {
   // Recursive promise iteration
   return new Promise((resolve, reject) => {
-    // Scan 'task' table
+    // Scan 'unfinished_task' table
     docClient.scan(taskParams, (error, data) => {
       if (!error) {
         // Structure the tasks, and add to the 'tasks' variable
-        structureTasks(data).forEach((task) => {
+        structureTasks(data, labelerId).forEach((task) => {
           tasks.push(task);
         });
         // If tasks have not yet reached 'taskCount', recurse
         if (tasks.length < taskCount && data.LastEvaluatedKey != null) {
           taskParams.ExclusiveStartKey = data.LastEvaluatedKey;
-          resolve(getTasks(taskParams, taskCount, tasks));
+          resolve(getTasks(taskParams, labelerId, taskCount, tasks));
         } else {
           resolve(tasks);
         }
       } else {
-        error.note = 'The scan operation for the \'task\' table failed.';
+        error.note = 'The scan operation for the \'unfinished_task\' table failed.';
         reject(error);
       }
     });
   });
 }
 
-function structureTasks(data) {
+/**
+ * ...
+ * 
+ * @param data 
+ * @param labelerId the 'labelerId' for which these tasks are requested
+ */
+function structureTasks(data, labelerId) {
   // Construct return object
   let tasks = [];
       
@@ -107,6 +114,9 @@ function structureTasks(data) {
         classes[className] = false;
       }
     });
+
+    // Add the 'labelerId' to 
+    item.labelerId = labelerId;
 
     // Replace current 'class' variable with the classes to be tested
     item.class = classes;
@@ -134,38 +144,44 @@ exports.handler = async (event) => {
 
   return new Promise((resolve, reject) => {
     getLabelerTaskList(labelerId, type).then((data) => {
-      // Define 'taskObject' to filter results to not contain already-given tasks
-      let taskObject = {};
-      let index = 0;
-      data.Items.forEach((item) => {
-        taskObject[(':taskId' + index)] = item.taskId;
-        index++;
-      });
 
-      // TODO: Handle case where 'labelerId' doesn't exist
-  
-      // Scan 'task' table for tasks of 'type' and not previously given to 'labelerId'
+      // Initialize params to scan 'unfinished_task' table
       let params = {
-        TableName: 'task',
+        TableName: 'unfinished_task',
         Limit: taskCount,
-        FilterExpression: 'NOT ( #taskId IN (' + Object.keys(taskObject).toString()
-          + ') ) AND #type = :type AND #progress < :one',
-        ProjectionExpression: 'instructions, taskId, multiclass, #data, #class, #type',
+        ProjectionExpression: 'instructions, #taskId, multiclass, #data, #class, #type',
         ExpressionAttributeNames: {
-          '#progress': 'progress',
           '#taskId': 'taskId',
           '#type': 'type',
           '#data': 'data',
           '#class': 'class'
         }
       }
-  
+      
+      // Initialize taskObject to provide dynamically-produced ExpressionAttributeValues
+      let taskObject = {};
+
+      // If 'labelerId' was not previously in table, do not include 'taskId' in FilterExpression
+      if (data.Count == 0) {
+        params.FilterExpression = '#type = :type';
+      } else {
+        // Define 'taskObject' to filter results to not contain already-given tasks
+        let index = 0;
+        data.Items.forEach((item) => {
+          taskObject[(':taskId' + index)] = item.taskId;
+          index++;
+        });
+        // Update params to filter 'taskId' accordingly
+        params.FilterExpression = 'NOT ( #taskId IN (' + Object.keys(taskObject).toString()
+          + ') ) AND #type = :type';
+      }
+
       // Assign value mappings for FilterExpression
       taskObject[':type'] = type;
-      taskObject[':one'] = 1;
       params.ExpressionAttributeValues = taskObject;
 
-      getTasks(params, taskCount, []).then((tasks) => {
+      // Scan 'unfinished_task' table for tasks of 'type' and not previously given to 'labelerId'
+      getTasks(params, labelerId, taskCount, []).then((tasks) => {
         resolve(tasks);
       }).catch((error) => {
         reject(error);
