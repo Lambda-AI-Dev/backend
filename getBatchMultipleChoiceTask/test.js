@@ -1,4 +1,5 @@
 let AWS = require('aws-sdk');
+require('dotenv').config();
 
 // AWS config details
 AWS.config.update({
@@ -10,9 +11,14 @@ AWS.config.update({
 // Create DocumentClient object to allow methods to interact with DynamoDB database
 let docClient = new AWS.DynamoDB.DocumentClient();
 
-// Define constants
+// NOTES: maxClasses overrides maxOccurrences, and if there are not enough tasks to satisfy
+// type and taskCount a shorter list is returned
+
+// Define constants (these would be set in a game developer console)
+const type = 'text'; // Type of task given
+const taskCount = 2; // Number of tasks given in this batch
 const maxClasses = 5; // Number of classes to be given in testing
-const maxOccurrences = 5; // Number of times a class should be given in a task
+const maxOccurrences = 5; // Number of times a class should be give in a task
 
 // NOTE: If 'labelerId' has more than 100 tasks currently in database associated with his
 // profile, it will not get the rest
@@ -107,12 +113,13 @@ function structureTasks(data, labelerId) {
     let classes = {};
     Object.keys(item.class).forEach((className, occurrences) => {
       // Automatically add class if there are not enough remaining
-      // OW, add if class needs to be given out more
-      if ((total - index - 1) + Object.entries(classes).length <= maxClasses) {
+      // OW, add if class needs to be given out more (and maxClasses hasn't been reached)
+      if ((total - index) + Object.entries(classes).length <= maxClasses) {
         classes[className] = false;
-      } else if (occurrences < maxOccurrences) {
+      } else if (occurrences < maxOccurrences && Object.entries(classes).length < maxClasses) {
         classes[className] = false;
       }
+      index++;
     });
 
     // Add the 'labelerId' to 
@@ -138,9 +145,7 @@ function structureTasks(data, labelerId) {
 
 function exportsHandler (event) {
   // Define inputs
-  let taskCount = event.taskCount;
   let labelerId = event.labelerId;
-  let type = event.type;
 
   return new Promise((resolve, reject) => {
     getLabelerTaskList(labelerId, type).then((data) => {
@@ -192,7 +197,9 @@ function exportsHandler (event) {
   });
 };
 
-let event = {}
+let event = {
+  'labelerId': '5307751900195447'
+}
 
 exportsHandler(event).then((data) => {
   console.log(data);
