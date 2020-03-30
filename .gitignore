@@ -1,5 +1,3 @@
 /node_modules
 rootkey.csv
 .env
-/uploadBatchMultipleChoiceTask/node_modules
-/getBatchMultipleChoiceTask/node_modules
