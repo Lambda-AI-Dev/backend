@@ -10,6 +10,11 @@ AWS.config.update({
 // Create DocumentClient object to allow methods to interact with DynamoDB database
 let docClient = new AWS.DynamoDB.DocumentClient();
 
+// Const set for as environment variable maxOccurrences
+// NOTE: maxClasses overrides maxOccurrences
+// TODO: This may be specified in the 'task', later
+const maxOccurrences = process.env.MAX_OCCURRENCES;
+
 // NOTE: If 'labelerId' has more than 100 tasks currently in database associated with his
 // profile, it will not get the rest
 
@@ -58,20 +63,20 @@ function getLabelerTaskList(labelerId, type) {
  * @param taskCount the number of tasks requested for 'labelerId'
  * @param tasks the list of task objects to be returned 
  */
-function getTasks(taskParams, labelerId, taskCount, maxClasses, maxOccurrences, tasks) {
+function getTasks(taskParams, labelerId, taskCount, maxClasses, tasks) {
   // Recursive promise iteration
   return new Promise((resolve, reject) => {
     // Scan 'unfinished_task' table
     docClient.scan(taskParams, (error, data) => {
       if (!error) {
         // Structure the tasks, and add to the 'tasks' variable
-        structureTasks(data, labelerId, maxClasses, maxOccurrences).forEach((task) => {
+        structureTasks(data, labelerId, maxClasses).forEach((task) => {
           tasks.push(task);
         });
         // If tasks have not yet reached 'taskCount', recurse
         if (tasks.length < taskCount && data.LastEvaluatedKey != null) {
           taskParams.ExclusiveStartKey = data.LastEvaluatedKey;
-          resolve(getTasks(taskParams, labelerId, taskCount, tasks));
+          resolve(getTasks(taskParams, labelerId, taskCount, maxClasses, tasks));
         } else {
           resolve(tasks);
         }
@@ -91,9 +96,8 @@ function getTasks(taskParams, labelerId, taskCount, maxClasses, maxOccurrences, 
  * @param data the data returned from scanning the 'unfinished_task' table for new tasks
  * @param labelerId the 'labelerId' for which these tasks are requested
  * @param maxClasses the maximum number of classes that should be given
- * @param maxOccurrences the maximum number of times a task should be given
  */
-function structureTasks(data, labelerId, maxClasses, maxOccurrences) {
+function structureTasks(data, labelerId, maxClasses) {
   // Construct return object
   let tasks = [];
       
@@ -135,11 +139,10 @@ function structureTasks(data, labelerId, maxClasses, maxOccurrences) {
   return tasks;
 }
 
-// NOTE: maxClasses overrides maxOccurrences, and if there are not enough tasks to satisfy
-// type and taskCount a shorter list is returned
+// NOTE: If there are not enough tasks to satisfy type and taskCount a shorter list is returned
 
 /**
- * Get the task details (type, taskCount, maxClasses, maxOccurrences)
+ * Get the task details (type, taskCount, maxClasses)
  * for that particular developerId
  * 
  * @param developerId the developer that requested the task
@@ -168,13 +171,13 @@ function getTaskDetails(developerId) {
 
 function get(labelerId, developerId, response) {
   return new Promise((resolve, reject) => {
-    // Get type, taskCount, maxClasses, maxOccurrences from developerId
-    getTaskDetails(developerId).then((data) => {
-      getLabelerTaskList(labelerId, data.Item.type).then((data) => {
+    // Get type, taskCount, maxClasses from developerId
+    getTaskDetails(developerId).then((taskDetailData) => {
+      getLabelerTaskList(labelerId, taskDetailData.Item.type).then((data) => {
         // Initialize params to scan 'unfinished_task' table
         let params = {
           TableName: 'unfinished_task',
-          Limit: taskCount,
+          Limit: taskDetailData.Item.taskCount,
           ProjectionExpression: 'instructions, #taskId, multiclass, #data, #class, #type',
           ExpressionAttributeNames: {
             '#taskId': 'taskId',
@@ -203,13 +206,16 @@ function get(labelerId, developerId, response) {
         }
   
         // Assign value mappings for FilterExpression
-        taskObject[':type'] = type;
+        taskObject[':type'] = taskDetailData.Item.type;
         params.ExpressionAttributeValues = taskObject;
   
         // Scan 'unfinished_task' table for tasks of 'type' and not previously given to 'labelerId'
-        getTasks(params, labelerId, data.Item.taskCount, data.Item.maxClasses, 
-          data.Item.maxOccurrences, []).then((tasks) => {
-  
+        getTasks(params, labelerId, taskDetailData.Item.taskCount, 
+         taskDetailData.Item.maxClasses, []).then((tasks) => {
+          // Add in developerId for each task
+          tasks.forEach((task) => {
+            task.developerId = developerId;
+          })
           response.body = JSON.stringify(tasks);
           resolve(response);
         }).catch((error) => {
@@ -241,7 +247,8 @@ function post(tasks) {
           'endTimestamp': task.endTimestamp,
           'labelingMethod': task.labelingMethod,
           'stoppedByTimer': task.stoppedByTimer,
-          'taskId': task.taskId
+          'taskId': task.taskId,
+          'developerId': task.developerId
         }
       }
       docClient.put(jobParams, (error, _) => {
@@ -448,16 +455,16 @@ exports.handler = async (request) => {
 
   return new Promise((resolve, reject) => {
     if (request.httpMethod == 'GET') {
-      if (request.pathParameters.developerId) {
-        
-      }
-      get(request.pathParameters.labelerId, response).then((taskResponse) => {
+      get(request.pathParameters.labelerId, request.pathParameters.developerId, 
+       response).then((taskResponse) => {
         resolve(taskResponse);
       }).catch((error) => {
+        response.body = error;
+        resolve(error);
         reject(error);
       });
     } else if (request.httpMethod == 'POST') {
-      post(JSON.parse(request.body)).then(() => {
+      post(request.body.results).then(() => {
         response.body = 'Success.';
         resolve(response);
       }).catch((error) => {
@@ -466,3 +473,56 @@ exports.handler = async (request) => {
     }
   });
 };
+
+let request = {
+  "httpMethod": "POST",
+  "body": {
+    "results": [
+      {
+        "instructions": "Choose the appropriate sentiment for this text.",
+        "multiclass": false,
+        "taskId": "1413413089602753",
+        "class": {
+          "Negative": false,
+          "Neutral": false,
+          "Positive": false
+        },
+        "data": "I am Daniel.",
+        "type": "text",
+        "labelerId": "5307751900195447",
+        "jobId": "6929148822438899",
+        "labelingMethod": "multipleChoice",
+        "stoppedByTimer": null,
+        "beginTimestamp": null,
+        "endTimestamp": null,
+        "developerId": "5445029971295084"
+      },
+      {
+        "instructions": "Choose the appropriate sentiment for this text.",
+        "multiclass": false,
+        "taskId": "4603175101087064",
+        "class": {
+          "Negative": false,
+          "Neutral": false,
+          "Positive": false
+        },
+        "data": "I am Tianyi.",
+        "type": "text",
+        "labelerId": "5307751900195447",
+        "jobId": "1785915690927755",
+        "labelingMethod": "multipleChoice",
+        "stoppedByTimer": null,
+        "beginTimestamp": null,
+        "endTimestamp": null,
+        "developerId": "5445029971295084"
+      }
+    ]
+  }
+};
+
+exportsHandler(request).then((data) => {
+  console.log(data);
+}).catch((error) => {
+  console.error(error);
+});
+
