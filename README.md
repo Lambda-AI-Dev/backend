@@ -6,6 +6,6 @@ The backend functions on AWS Lambda (just including `getMultipleChoiceImage.js` 
 
 - Created .env file in root directory
 - .env file follows the following structure:
-  - REGION=XXXXX
-  - ACCESS_ID=XXXXX
-  - SECRET_KEY=XXXXX
+  - AWS_DEFAULT_REGION=XXXXX
+  - AWS_INPUT_ACCESS_KEY_ID=XXXXX
+  - AWS_INPUT_SECRET_ACCESS_KEY=XXXXX
