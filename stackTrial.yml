@@ -1,11 +1,11 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 
-Description: The REST API stack for the GET and POST functions for multiple choice tasks.
+Description: The trial / testing version of the REST API stack for the GET and POST functions for multiple choice tasks.
 
 Resources:
   # Policy required for all lambda function roles.
-  BaseLambdaExecutionPolicy:
+  BaseLambdaExecutionPolicyTrial:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       Description: Base permissions needed by all lambda functions.
@@ -23,10 +23,10 @@ Resources:
             Resource: "*"
 
   # FIXME How to hook up custom domain?
-  MyApiGateway:
+  MyApiGatewayTrial:
     Type: AWS::ApiGateway::RestApi
     Properties:
-      Name: !Sub "${AWS::StackName}-MyApiGateway"
+      Name: !Sub "${AWS::StackName}-MyApiGatewayTrial"
       Description: A description
       FailOnWarnings: true
       Body:
@@ -47,8 +47,8 @@ Resources:
             get:
               description: Get a number of new, unique multiple choice tasks for a particular user.
               x-amazon-apigateway-integration:
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MultipleChoiceTask.Arn}/invocations"
-                credentials: !GetAtt MyApiGatewayRole.Arn
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MultipleChoiceTaskTrial.Arn}/invocations"
+                credentials: !GetAtt MyApiGatewayRoleTrial.Arn
                 passthroughBehavior: when_no_match
                 httpMethod: POST
                 type: aws_proxy
@@ -64,8 +64,8 @@ Resources:
             post:
               description: Update the database with the results of the labeled multiple choice task.
               x-amazon-apigateway-integration:
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MultipleChoiceTask.Arn}/invocations"
-                credentials: !GetAtt MyApiGatewayRole.Arn
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MultipleChoiceTaskTrial.Arn}/invocations"
+                credentials: !GetAtt MyApiGatewayRoleTrial.Arn
                 passthroughBehavior: when_no_match
                 httpMethod: POST
                 type: aws_proxy
@@ -89,13 +89,13 @@ Resources:
                       email:
                         type: string
 
-  MyApiGatewayDeployment:
+  MyApiGatewayDeploymentTrial:
     Type: AWS::ApiGateway::Deployment
     Properties:
-      RestApiId: !Ref MyApiGateway
+      RestApiId: !Ref MyApiGatewayTrial
       StageName: prod
 
-  MyApiGatewayRole:
+  MyApiGatewayRoleTrial:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -114,19 +114,19 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource:
-                  - !GetAtt MultipleChoiceTask.Arn
+                  - !GetAtt MultipleChoiceTaskTrial.Arn
 
-  MultipleChoiceTask:
+  MultipleChoiceTaskTrial:
     Type: AWS::Lambda::Function
     Properties:
-      Role: !GetAtt MultipleChoiceTaskRole.Arn  # TODO
+      Role: !GetAtt MultipleChoiceTaskRoleTrial.Arn  # TODO
       Handler: index.handler
       Runtime: nodejs12.x
       Code:
         ZipFile: |
           exports.handler = function(event) {}
 
-  MultipleChoiceTaskRole:  # -> AppAPIRole
+  MultipleChoiceTaskRoleTrial:  # -> AppAPIRole
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -137,4 +137,4 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - !Ref BaseLambdaExecutionPolicy
+        - !Ref BaseLambdaExecutionPolicyTrial
