@@ -525,16 +525,16 @@ exports.handler = async (request) => {
        response).then((taskResponse) => {
         resolve(taskResponse);
       }).catch((error) => {
-        response.body = error;
-        resolve(error);
-        reject(error);
+        response.body = JSON.stringify(error);
+        resolve(response);
       });
     } else if (request.httpMethod == 'POST') {
       post(JSON.parse(request.body).results).then(() => {
         response.body = 'Success.';
         resolve(response);
       }).catch((error) => {
-        reject(error);
+        response.body = JSON.stringify(error);
+        resolve(response);
       });
     }
   });

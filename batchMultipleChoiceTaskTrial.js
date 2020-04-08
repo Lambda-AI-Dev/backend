@@ -1,5 +1,4 @@
 let AWS = require('aws-sdk');
-require('dotenv').config();
 
 // AWS config details
 AWS.config.update({
@@ -461,6 +460,11 @@ function updateTaskDataset(task) {
   
 }
 
+/**
+ * Post the list of labeled tasks
+ * 
+ * @param tasks list of labeled tasks from user
+ */
 function post(tasks) {
 
   // List of promises to verify that all tasks pass
@@ -521,9 +525,8 @@ async function exportsHandler (request) {
        response).then((taskResponse) => {
         resolve(taskResponse);
       }).catch((error) => {
-        response.body = error;
-        resolve(error);
-        reject(error);
+        response.body = JSON.stringify(error);
+        resolve(response);
       });
     } else if (request.httpMethod == 'POST') {
       // TODO: Add in JSON.parse()
@@ -531,13 +534,22 @@ async function exportsHandler (request) {
         response.body = 'Success.';
         resolve(response);
       }).catch((error) => {
-        reject(error);
+        response.body = JSON.stringify(error);
+        resolve(response);
       });
     }
   });
 };
 
-let request = {
+let getRequest = {
+  "httpMethod": "GET",
+  "pathParameters": {
+    "labelerId":  "5307751900195447",
+    "developerId": "5445029971295084"
+  }
+}
+
+let postRequest = {
   "httpMethod": "POST",
   "body": 
   {
@@ -586,7 +598,7 @@ let request = {
   }
 };
 
-exportsHandler(request).then((data) => {
+exportsHandler(getRequest).then((data) => {
   console.log(data);
 }).catch((error) => {
   console.error(error);
