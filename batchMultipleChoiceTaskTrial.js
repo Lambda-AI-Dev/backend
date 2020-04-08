@@ -1,4 +1,5 @@
 let AWS = require('aws-sdk');
+require('dotenv').config();
 
 // AWS config details
 AWS.config.update({
@@ -128,6 +129,7 @@ function structureTasks(data, labelerId, maxClasses) {
     item.jobId = (Math.random() + '').substring(2,10) 
      + (Math.random() + '').substring(2,10);
     item.labelingMethod = 'multipleChoice';
+    item.skipped = false;
     item.stoppedByTimer = null;
     item.beginTimestamp = null;
     item.endTimestamp = null;
@@ -231,218 +233,278 @@ function get(labelerId, developerId, response) {
   });
 }
 
-function post(tasks) {
+/**
+ * Upload the task to the 'job' and 'labeler_task' tables
+ * 
+ * @param task a single completed task
+ */
+function uploadBaseTask(task) {
   return new Promise((resolve, reject) => {
-    // Iterate over tasks
-    tasks.forEach((task) => {
-
-      // Add to 'job' table
-      let jobParams = {
-        TableName: 'job',
-        Item: {
-          'labelerId': task.labelerId,
-          'jobId': task.jobId,
-          'beginTimestamp': task.beginTimestamp,
-          'class': task.class,
-          'endTimestamp': task.endTimestamp,
-          'labelingMethod': task.labelingMethod,
-          'stoppedByTimer': task.stoppedByTimer,
-          'taskId': task.taskId,
-          'developerId': task.developerId
-        }
+    // Add to 'job' table
+    let jobParams = {
+      TableName: 'job',
+      Item: {
+        'labelerId': task.labelerId,
+        'jobId': task.jobId,
+        'beginTimestamp': task.beginTimestamp,
+        'class': task.class,
+        'endTimestamp': task.endTimestamp,
+        'labelingMethod': task.labelingMethod,
+        'stoppedByTimer': task.stoppedByTimer,
+        'taskId': task.taskId,
+        'developerId': task.developerId,
+        'skipped': task.skipped
       }
-      docClient.put(jobParams, (error, _) => {
-        if (error) {
-          error.note = 'The put operation for the \'job\' table failed.';
-          reject(error);
-        }
-      });
-
-      // Add to 'labeler_task' table
-      let labelerTaskParams = {
-        TableName: 'labeler_task',
-        Item: {
-          'labelerId': task.labelerId,
-          'jobId': task.jobId,
-          'taskId': task.taskId,
-          'type': task.type
-        }
+    }
+    docClient.put(jobParams, (error, _) => {
+      if (error) {
+        error.note = 'The put operation for the \'job\' table failed.';
+        reject(error);
       }
-      docClient.put(labelerTaskParams, (error, _) => {
-        if (error) {
-          error.note = 'The put operation for the \'labeler_task\' table failed.';
-          reject(error);
-        }
-      });
-
-      // Get class, progress, and datasetId from 'unfinished_task' table
-      let taskGetParams = {
-        TableName: 'unfinished_task',
-        Key: {
-          'taskId': task.taskId
-        }
-      }
-      docClient.get(taskGetParams, (error, data) => {
-        if (!error) {
-
-          // Use task and data to update class and progress
-          Object.keys(task.class).forEach((className) => {
-            data.Item.class[className]++;
-            // If class is finished, update task progress
-            if (data.Item.class[className] == maxOccurrences) {
-              // Update progress
-              data.Item.progress.current++;
-            }
-          });
-
-          // TODO: This should never be '>', but what if it is?
-
-          // If task is finished, move task from 'unfinished_task' table to 'finished_task' table,
-          // and update both 'dataset' tables
-          if (data.Item.progress.current == data.Item.progress.total) {
-
-            // Create new item in 'finished_task' table
-            data.TableName = 'finished_task';
-            docClient.put(data, (error, _) => {
-              if (error) {
-                error.note = 'The put operation for the \'finished_task\' table failed.';
-                reject(error);
-              }
-            });
-
-            // Remove item in 'unfinished_task' table
-            let finishedTaskParams = {
-              TableName: 'unfinished_task',
-              Key: {
-                'taskId': task.taskId
-              }
-            }
-            docClient.delete(finishedTaskParams, (error, _) => {
-              if (error) {
-                error.note = 'The delete operation for the \'unfinished_task\' table failed.';
-                reject(error);
-              }
-            });
-
-            // Update 'finished' status of the 'taskId' in 'dataset_<DATASETID>' table
-            let datasetFinishedTaskParams = {
-              TableName: 'dataset_' + data.Item.datasetId,
-              Key: {
-                'taskId': task.taskId
-              },
-              UpdateExpression: 'SET #finished = :true',
-              ExpressionAttributeNames: {
-                '#finished': 'finished'
-              },
-              ExpressionAttributeValues: {
-                ':true': true
-              },
-              ReturnValues: 'UPDATED_NEW'
-            }
-            docClient.update(datasetFinishedTaskParams, (error, _) => {
-              if (error) {
-                error.note = 'The update operation for the \'dataset_' + data.Item.datasetId 
-                 + '\' table failed.';
-                reject(error);
-              }
-            });
-
-            // Update current 'progress' counter in 'dataset' table
-            let datasetProgressParams = {
-              TableName: 'dataset',
-              Key: {
-                'datasetId': '4898691044887699'
-              },
-              UpdateExpression: 'SET #progress.#current = #progress.#current + :one',
-              ExpressionAttributeNames: {
-                '#progress': 'progress',
-                '#current': 'current'
-              },
-              ExpressionAttributeValues: {
-                ':one': 1
-              },
-              ReturnValues: 'UPDATED_NEW'
-            }
-            docClient.update(datasetProgressParams, (error, data) => {
-              if (!error && data.Item.progress.current == data.Item.progress.total) {
-                // Conditionally update 'finished' status in 'dataset' table
-                let datasetFinishedParams = {
-                  TableName: 'dataset',
-                  Key: {
-                    'datasetId': '4898691044887699'
-                  },
-                  UpdateExpression: 'SET #finished = :true',
-                  ExpressionAttributeNames: {
-                    '#finished': 'finished',
-                    '#total': 'total'
-                  },
-                  ExpressionAttributeValues: {
-                    ':true': true
-                  },
-                  ReturnValues: 'UPDATED_NEW'
-                }
-                docClient.update(datasetFinishedParams, (error, _) => {
-                  if (error) {
-                    error.note = 'The second update operation for the \'dataset\' table failed.';
-                    reject(error);
-                  } else {
-                    // Resolve to indicate finished function
-                    resolve();
-                  }
-                });
-              } else if (!error) {
-                // Resolve to indicate finished function
-                resolve();
-              } else {
-                error.note = 'The second update operation for the \'dataset\' table failed.';
-                reject(error);
-              }
-            });
-
-          } else {
-
-            // Update 'unfinished_task' table
-            let taskUpdateParams = {
-              TableName: 'unfinished_task',
-              Key: {
-                'taskId': task.taskId
-              },
-              UpdateExpression: 'SET #class = :class, #progress = :progress',
-              ExpressionAttributeNames: {
-                '#class': 'class',
-                '#progress': 'progress'
-              },
-              ExpressionAttributeValues: {
-                ':class': data.Item.class,
-                ':progress': data.Item.progress
-              },
-              ReturnValues: 'UPDATED_NEW'
-            }
-            docClient.update(taskUpdateParams, (error, data) => {
-              if (error) {
-                error.note = 'The put operation for the \'unfinished_task\' table failed.';
-                reject(error);
-              } else {
-                // Resolve to indicate finished function
-                resolve();
-              }
-            });
-
-          }
-
-        } else {
-          error.note = 'The get operation for the \'unfinished_task\' table failed.';
-          reject(error);
-        }
-
-      });
-
     });
 
+    // Add to 'labeler_task' table
+    let labelerTaskParams = {
+      TableName: 'labeler_task',
+      Item: {
+        'labelerId': task.labelerId,
+        'jobId': task.jobId,
+        'taskId': task.taskId,
+        'type': task.type
+      }
+    }
+    docClient.put(labelerTaskParams, (error, _) => {
+      if (error) {
+        error.note = 'The put operation for the \'labeler_task\' table failed.';
+        reject(error);
+      } else {
+        // Do not update any more tables if task was skipped.
+        resolve();
+      }
+    });
   });
 }
 
-exports.handler = async (request) => {
+/**
+ * Update the count of classes completed in 'task' database
+ * If applicable, update the 'dataset' databases to indicate 
+ * finished tasks, including moving the task itself
+ * 
+ * NOTE: This should not be called if task.skipped == true
+ * 
+ * @param task a single completed task
+ */
+function updateTaskDataset(task) {
+
+  // Return a Promise to indicate success / failure
+  return new Promise((resolve, reject) => {
+    let taskGetParams = {
+      TableName: 'unfinished_task',
+      Key: {
+        'taskId': task.taskId
+      }
+    }
+    docClient.get(taskGetParams, (error, data) => {
+      if (!error) {
+  
+        // Use task and data to update class and progress
+        Object.keys(task.class).forEach((className) => {
+          data.Item.class[className]++;
+          // If class is finished, update task progress
+          if (data.Item.class[className] == maxOccurrences) {
+            // Update progress
+            data.Item.progress.current++;
+          }
+        });
+  
+        // TODO: This should never be '>', but what if it is?
+  
+        // If task is finished, move task from 'unfinished_task' table to 'finished_task' table,
+        // and update both 'dataset' tables
+        if (data.Item.progress.current == data.Item.progress.total) {
+  
+          // Create new item in 'finished_task' table
+          data.TableName = 'finished_task';
+          docClient.put(data, (error, _) => {
+            if (error) {
+              error.note = 'The put operation for the \'finished_task\' table failed.';
+              reject(error);
+            }
+          });
+  
+          // Remove item in 'unfinished_task' table
+          let finishedTaskParams = {
+            TableName: 'unfinished_task',
+            Key: {
+              'taskId': task.taskId
+            }
+          }
+          docClient.delete(finishedTaskParams, (error, _) => {
+            if (error) {
+              error.note = 'The delete operation for the \'unfinished_task\' table failed.';
+              reject(error);
+            }
+          });
+  
+          // Update 'finished' status of the 'taskId' in 'dataset_<DATASETID>' table
+          let datasetFinishedTaskParams = {
+            TableName: 'dataset_' + data.Item.datasetId,
+            Key: {
+              'taskId': task.taskId
+            },
+            UpdateExpression: 'SET #finished = :true',
+            ExpressionAttributeNames: {
+              '#finished': 'finished'
+            },
+            ExpressionAttributeValues: {
+              ':true': true
+            },
+            ReturnValues: 'UPDATED_NEW'
+          }
+          docClient.update(datasetFinishedTaskParams, (error, _) => {
+            if (error) {
+              error.note = 'The update operation for the \'dataset_' + data.Item.datasetId 
+              + '\' table failed.';
+              reject(error);
+            }
+          });
+  
+          // Update current 'progress' counter in 'dataset' table
+          let datasetProgressParams = {
+            TableName: 'dataset',
+            Key: {
+              'datasetId': '4898691044887699'
+            },
+            UpdateExpression: 'SET #progress.#current = #progress.#current + :one',
+            ExpressionAttributeNames: {
+              '#progress': 'progress',
+              '#current': 'current'
+            },
+            ExpressionAttributeValues: {
+              ':one': 1
+            },
+            ReturnValues: 'UPDATED_NEW'
+          }
+          docClient.update(datasetProgressParams, (error, data) => {
+            if (!error && data.Item.progress.current == data.Item.progress.total) {
+              // Conditionally update 'finished' status in 'dataset' table
+              let datasetFinishedParams = {
+                TableName: 'dataset',
+                Key: {
+                  'datasetId': '4898691044887699'
+                },
+                UpdateExpression: 'SET #finished = :true',
+                ExpressionAttributeNames: {
+                  '#finished': 'finished',
+                  '#total': 'total'
+                },
+                ExpressionAttributeValues: {
+                  ':true': true
+                },
+                ReturnValues: 'UPDATED_NEW'
+              }
+              docClient.update(datasetFinishedParams, (error, _) => {
+                if (error) {
+                  error.note = 'The second update operation for the \'dataset\' table failed.';
+                  reject(error);
+                } else {
+                  // Resolve to indicate finished function
+                  resolve();
+                }
+              });
+            } else if (!error) {
+              // Resolve to indicate finished function
+              resolve();
+            } else {
+              error.note = 'The second update operation for the \'dataset\' table failed.';
+              reject(error);
+            }
+          });
+  
+        } else {
+  
+          // Update 'unfinished_task' table
+          let taskUpdateParams = {
+            TableName: 'unfinished_task',
+            Key: {
+              'taskId': task.taskId
+            },
+            UpdateExpression: 'SET #class = :class, #progress = :progress',
+            ExpressionAttributeNames: {
+              '#class': 'class',
+              '#progress': 'progress'
+            },
+            ExpressionAttributeValues: {
+              ':class': data.Item.class,
+              ':progress': data.Item.progress
+            },
+            ReturnValues: 'UPDATED_NEW'
+          }
+          docClient.update(taskUpdateParams, (error, data) => {
+            if (error) {
+              error.note = 'The put operation for the \'unfinished_task\' table failed.';
+              reject(error);
+            } else {
+              // Resolve to indicate finished function
+              resolve();
+            }
+          });
+  
+        }
+  
+      } else {
+        error.note = 'The get operation for the \'unfinished_task\' table failed.';
+        reject(error);
+      }
+    });
+  });
+  
+}
+
+function post(tasks) {
+
+  // List of promises to verify that all tasks pass
+  let promises = [];
+  
+  // Iterate over tasks
+  tasks.forEach((task) => {
+    promises.push(new Promise((resolve, reject) => {
+      // Upload the task to 'job' and 'labeler_task' tables
+      uploadBaseTask(task).then(() => {
+        // If the user skipped the task, 
+        if (task.skipped) {
+          resolve();
+        }
+      }).catch((error) => {
+        reject(error);
+      });
+
+      // If task is not skipped, further update dataset
+      if (!task.skipped) {
+        updateTaskDataset(task).then(() => {
+          resolve();
+        }).catch((error) => {
+          reject(error);
+        });
+      }
+      
+    }));
+
+  });
+
+  // Verify that all of the tasks were uploaded correctly;
+  // otherwise, return an error
+  return new Promise((resolve, reject) => {
+    Promise.all(promises).then(() => {
+      resolve();
+    }).catch((error) => {
+      reject(error);
+    });
+  });
+
+}
+
+async function exportsHandler (request) {
   // Define response
   let response = {
     headers: {
@@ -464,6 +526,7 @@ exports.handler = async (request) => {
         reject(error);
       });
     } else if (request.httpMethod == 'POST') {
+      // TODO: Add in JSON.parse()
       post(request.body.results).then(() => {
         response.body = 'Success.';
         resolve(response);
@@ -473,3 +536,59 @@ exports.handler = async (request) => {
     }
   });
 };
+
+let request = {
+  "httpMethod": "POST",
+  "body": 
+  {
+    "results": [
+      {
+        "instructions": "Choose the appropriate sentiment for this text.",
+        "multiclass": false,
+        "taskId": "1413413089602753",
+        "class": {
+          "Negative": false,
+          "Neutral": false,
+          "Positive": false
+        },
+        "data": "I am Daniel.",
+        "type": "text",
+        "labelerId": "5307751900195447",
+        "jobId": "6929148822438899",
+        "labelingMethod": "multipleChoice",
+        "stoppedByTimer": null,
+        "beginTimestamp": null,
+        "endTimestamp": null,
+        "developerId": "5445029971295084",
+        "skipped": false
+      },
+      {
+        "instructions": "Choose the appropriate sentiment for this text.",
+        "multiclass": false,
+        "taskId": "4603175101087064",
+        "class": {
+          "Negative": false,
+          "Neutral": false,
+          "Positive": false
+        },
+        "data": "I am Tianyi.",
+        "type": "text",
+        "labelerId": "5307751900195447",
+        "jobId": "1785915690927755",
+        "labelingMethod": "multipleChoice",
+        "stoppedByTimer": null,
+        "beginTimestamp": null,
+        "endTimestamp": null,
+        "developerId": "5445029971295084",
+        "skipped": true
+      }
+    ]
+  }
+};
+
+exportsHandler(request).then((data) => {
+  console.log(data);
+}).catch((error) => {
+  console.error(error);
+});
+

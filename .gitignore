@@ -1,3 +1,4 @@
 /node_modules
 rootkey.csv
 .env
+test.js
