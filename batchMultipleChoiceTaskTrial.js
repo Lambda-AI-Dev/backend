@@ -1,4 +1,5 @@
 let AWS = require('aws-sdk');
+let crypto = require('crypto');
 
 // AWS config details
 AWS.config.update({
@@ -125,8 +126,7 @@ function structureTasks(data, labelerId, maxClasses) {
     item.class = classes;
 
     // Set other variables specific to the task
-    item.jobId = (Math.random() + '').substring(2,10) 
-     + (Math.random() + '').substring(2,10);
+    item.jobId = crypto.randomBytes(8).toString('hex');
     item.labelingMethod = 'multipleChoice';
     item.skipped = false;
     item.stoppedByTimer = null;

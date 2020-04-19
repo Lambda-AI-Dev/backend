@@ -1,3 +1,5 @@
+let crypto = require("crypto");
+
 let AWS = require('aws-sdk');
 require('dotenv').config();
 
@@ -28,9 +30,12 @@ function myTest() {
 
 }
 
-myTest().then(() => {
-  console.log('I resolved!');
-}).catch((error) => {
-  console.log('I have an error.');
-  console.log(error);
-});
+// myTest().then(() => {
+//   console.log('I resolved!');
+// }).catch((error) => {
+//   console.log('I have an error.');
+//   console.log(error);
+// });
+
+const id = crypto.randomBytes(16).toString("hex");
+console.log(id);
