@@ -2,3 +2,4 @@
 rootkey.csv
 .env
 test.js
+resetDatabase.js

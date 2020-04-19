@@ -441,7 +441,7 @@ function updateTaskDataset(task) {
           }
           docClient.update(taskUpdateParams, (error, data) => {
             if (error) {
-              error.note = 'The put operation for the \'unfinished_task\' table failed.';
+              error.note = 'The update operation for the \'unfinished_task\' table failed.';
               reject(error);
             } else {
               // Resolve to indicate finished function
